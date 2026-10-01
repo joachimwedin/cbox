@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Entry point for the `cbox` command -- resolves its own install location
+# independent of the caller's working directory via BASH_SOURCE, then runs
+# src/cli/main.ts directly through tsx (no npx, no build step), so the
+# command works from any directory once this script itself is reachable
+# on PATH (e.g. via an alias pointing at it). Requires `tsx` installed
+# globally (`npm install -g tsx`); cbox has no other runtime dependency.
+#
+# Usage:
+#   cbox [args...]   # e.g. cbox --resume abc123
+
+set -euo pipefail
+
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+
+exec tsx "$SCRIPT_DIR/src/cli/main.ts" "$@"

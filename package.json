@@ -1,0 +1,22 @@
+{
+  "name": "cbox",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TS rewrite of the cbox shell alias, configurable via cbox.config.ts hooks.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
