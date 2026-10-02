@@ -5,10 +5,17 @@ import * as path from "node:path";
 
 export type CopyOptions = { followSymlinks?: boolean };
 
-type SandboxListEntry = { name: string; agent: string; workspaces: string[] };
+export type SandboxListEntry = { name: string; agent: string; workspaces: string[] };
 
 /** Positional `sbx create` argument fixed since the original bash `cbox` alias -- not hookable. */
 const CBOX_IMAGE = "claude";
+
+/** Every sandbox `sbx` currently knows about, regardless of agent. */
+export function listSandboxes(): SandboxListEntry[] {
+  const output = execFileSync("sbx", ["ls", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const { sandboxes } = JSON.parse(output) as { sandboxes: SandboxListEntry[] };
+  return sandboxes;
+}
 
 /**
  * Finds the sandbox (if any) already mounting `workdir` as its primary
@@ -18,9 +25,7 @@ const CBOX_IMAGE = "claude";
  * cbox's own sandbox for that path.
  */
 export function findSandboxByWorkdir(workdir: string): string | undefined {
-  const output = execFileSync("sbx", ["ls", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  const { sandboxes } = JSON.parse(output) as { sandboxes: SandboxListEntry[] };
-  return sandboxes.find((sandbox) => sandbox.agent === CBOX_IMAGE && sandbox.workspaces[0] === workdir)?.name;
+  return listSandboxes().find((sandbox) => sandbox.agent === CBOX_IMAGE && sandbox.workspaces[0] === workdir)?.name;
 }
 
 /**

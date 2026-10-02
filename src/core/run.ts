@@ -1,9 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import type { Ctx } from "../hooks/types.js";
-import { createSandbox, findSandboxByWorkdir, SbxClient } from "../sbxClient.js";
+import type { CboxConfig, Ctx } from "../hooks/types.js";
+import { createSandbox, findSandboxByWorkdir, listSandboxes, SbxClient } from "../sbxClient.js";
 import { type Env, loadConfig } from "./config.js";
+import { listRegisteredSandboxes, type RegistryEntry, recordSandbox } from "./registry.js";
 
 function readHostSettings(homedir: string): Record<string, unknown> {
   const settingsPath = path.join(homedir, ".claude", "settings.json");
@@ -31,6 +32,11 @@ function withProjectsSyncHook(settings: Record<string, unknown>): Record<string,
 // Runs a full-replace hook when the config defines one, else keeps core's own fixed fallback.
 function applyHook<T>(hook: ((ctx: Ctx) => T) | undefined, ctx: Ctx, fallback: T): T {
   return hook ? hook(ctx) : fallback;
+}
+
+// Shared by the creation path and `refreshCbox` -- the one source of truth for how settings.json is built.
+function resolveSettings(config: CboxConfig, ctx: Ctx, homedir: string): Record<string, unknown> {
+  return withProjectsSyncHook(applyHook(config.resolveSettings, ctx, readHostSettings(homedir)));
 }
 
 export type RunCboxDeps = {
@@ -72,7 +78,7 @@ export async function runCbox(argv: string[], deps: RunCboxDeps): Promise<number
     const extraMounts = applyHook(config.resolveMounts, ctx, []);
     const mounts = [workdir, claudeProjectsDir, ...extraMounts];
 
-    const settings = withProjectsSyncHook(applyHook(config.resolveSettings, ctx, readHostSettings(homedir)));
+    const settings = resolveSettings(config, ctx, homedir);
 
     const allowedHosts = applyHook(config.resolveAllowedHosts, ctx, []);
 
@@ -89,6 +95,7 @@ export async function runCbox(argv: string[], deps: RunCboxDeps): Promise<number
       throw new Error(`sbx create succeeded but no sandbox is now mounting ${workdir} as its primary workspace`);
     }
     sbx = new SbxClient(createdName);
+    recordSandbox(homedir, workdir, createdName);
 
     if (allowedHosts.length > 0) {
       sbx.allowNetwork(allowedHosts);
@@ -101,9 +108,103 @@ export async function runCbox(argv: string[], deps: RunCboxDeps): Promise<number
     sbx.writeSettings(settings);
   } else {
     sbx = new SbxClient(existingName);
+    // Backfills the registry for a sandbox that predates it, or was created by an older cbox build.
+    recordSandbox(homedir, workdir, existingName);
   }
 
   sbx.copySkills(path.join(homedir, ".claude", "skills"));
 
   return sbx.run(argv);
+}
+
+// Applies resolveAllowedHosts/resolveSettings/skills to one already-existing sandbox -- refreshCbox's unit of work.
+function refreshOne(config: CboxConfig, entry: RegistryEntry, homedir: string): void {
+  const sbx = new SbxClient(entry.name);
+  const ctx: Ctx = { workdir: entry.workdir, homedir };
+
+  const allowedHosts = applyHook(config.resolveAllowedHosts, ctx, []);
+  if (allowedHosts.length > 0) {
+    sbx.allowNetwork(allowedHosts);
+  }
+
+  sbx.writeSettings(resolveSettings(config, ctx, homedir));
+  sbx.copySkills(path.join(homedir, ".claude", "skills"));
+}
+
+/**
+ * Re-applies `resolveAllowedHosts`, `resolveSettings`, and skills to the
+ * sandbox already mounting `deps.workdir` -- the fix for
+ * `resolveAllowedHosts`/`resolveSettings` otherwise only ever being
+ * applied once, at creation, so editing either in `cbox.config.ts` has no
+ * effect on a sandbox `runCbox` is just reusing. `resolveEnv`/
+ * `resolveMounts` aren't re-applied here: both are fixed into the sandbox
+ * at `sbx create` time and there's no way to change them on a live
+ * sandbox short of recreating it. Throws if no sandbox is mounting
+ * `deps.workdir` yet -- there's nothing to refresh.
+ */
+async function refreshOneForWorkdir(deps: RunCboxDeps): Promise<number> {
+  const { workdir, homedir } = deps;
+  const config = await loadConfig(deps.env, deps.cboxRoot);
+
+  const name = findSandboxByWorkdir(workdir);
+  if (name === undefined) {
+    throw new Error(`no sandbox is mounting ${workdir} as its primary workspace -- run cbox first to create one`);
+  }
+
+  refreshOne(config, { workdir, name }, homedir);
+  console.log(`refreshed ${name} (${workdir})`);
+  return 0;
+}
+
+/**
+ * Re-applies `resolveAllowedHosts`, `resolveSettings`, and skills to
+ * every cbox-managed sandbox still live, per the registry `runCbox` keeps
+ * at `~/.cbox/sandboxes.json` (consulted instead of guessing from
+ * `sbx ls`'s `agent` field, which only says a sandbox runs the claude
+ * image, not that cbox made it). A registered sandbox `sbx ls` no longer
+ * reports is never silently dropped -- it's warned about and skipped, and
+ * stays registered for the next refresh. One sandbox's failure doesn't
+ * stop the rest -- each is reported on its own line, and the overall exit
+ * code is non-zero if any of them failed.
+ */
+async function refreshAll(deps: RunCboxDeps): Promise<number> {
+  const { homedir } = deps;
+  const config = await loadConfig(deps.env, deps.cboxRoot);
+
+  const liveNames = new Set(listSandboxes().map((sandbox) => sandbox.name));
+  const registered = listRegisteredSandboxes(homedir);
+  for (const entry of registered) {
+    if (!liveNames.has(entry.name)) {
+      console.warn(`cbox refresh: ${entry.name} (${entry.workdir}) is registered but no longer exists -- skipping`);
+    }
+  }
+  const live = registered.filter((entry) => liveNames.has(entry.name));
+
+  if (live.length === 0) {
+    console.log("no cbox-managed sandboxes to refresh");
+    return 0;
+  }
+
+  let exitCode = 0;
+  for (const entry of live) {
+    try {
+      refreshOne(config, entry, homedir);
+      console.log(`refreshed ${entry.name} (${entry.workdir})`);
+    } catch (err) {
+      exitCode = 1;
+      console.error(
+        `failed to refresh ${entry.name} (${entry.workdir}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  return exitCode;
+}
+
+/**
+ * `cbox refresh`'s entry point: refreshes just `deps.workdir`'s own
+ * sandbox by default, or every cbox-managed sandbox when `all` is true --
+ * see `refreshOneForWorkdir`/`refreshAll` for each mode's own contract.
+ */
+export async function refreshCbox(deps: RunCboxDeps, all = false): Promise<number> {
+  return all ? refreshAll(deps) : refreshOneForWorkdir(deps);
 }

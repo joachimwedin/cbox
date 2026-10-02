@@ -46,6 +46,17 @@ A CLI that runs [Claude Code](https://claude.com/claude-code) inside an [`sbx`](
 - **Hook-based config.** `cbox.config.ts` can fully replace the env vars, mounts, settings.json, and allowed network hosts a fresh sandbox gets, plus run arbitrary setup before/after creation — see [Hooks](#hooks).
 - **Skills always synced.** Everything under `~/.claude/skills/` is copied into the sandbox on every run, not just on creation.
 - **Session history survives the sandbox.** Every transcript Claude writes inside the sandbox is mirrored back to `~/.claude/projects` on the host after every message.
+- **Allowed hosts and settings can be refreshed without recreating the sandbox.** `cbox refresh` re-applies `resolveAllowedHosts` and `resolveSettings` to the sandbox already mounting the current directory (or every cbox-managed sandbox with `--all`) — see [Commands](#commands).
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `cbox` | Create (or reuse) the sandbox for this directory and run `claude --dangerously-skip-permissions` inside it. |
+| `cbox refresh` | Re-run `resolveAllowedHosts` and `resolveSettings` against the sandbox already mounting this directory, and re-copy skills — without recreating the sandbox or starting a session. Fails if no such sandbox exists yet. `resolveEnv` and `resolveMounts` aren't covered: both are fixed into the sandbox at creation and can't be changed without recreating it. |
+| `cbox refresh --all` | Same as `cbox refresh`, but swept across every cbox-managed sandbox still running, regardless of which directory you run it from. A sandbox cbox created or reused before now knows about but that's since disappeared (e.g. removed with `sbx rm`) is warned about and skipped, not silently dropped — it stays registered in case it comes back. One sandbox failing doesn't stop the rest, but makes the command exit non-zero. |
+
+`cbox refresh --all` sweeps a small local registry at `~/.cbox/sandboxes.json`, mapping each directory to the sandbox `cbox` made for it — kept because `sbx ls`'s `agent` field alone only says a sandbox runs the claude image, not that cbox made it.
 
 ### Configuration
 
@@ -55,7 +66,7 @@ A CLI that runs [Claude Code](https://claude.com/claude-code) inside an [`sbx`](
 
 ### Hooks
 
-All six hooks are optional and only run on the sandbox-**creation** path — reusing an existing sandbox skips straight to the skills copy and `sbx run`. `resolveEnv`/`resolveMounts`/`resolveSettings`/`resolveAllowedHosts` are **full-replace**: whatever they return is final. Core's own fixed values — the primary workspace mount, and the mount/env var/`Stop` hook that sync session history (see below) — are never routed through a hook, so build on anything else you want, like the host's own `~/.claude/settings.json`, by reading it yourself. `preCreate`/`postCreate` are **additive**: cbox's own fixed setup always runs regardless of what they do.
+All six hooks are optional. `resolveEnv`/`resolveMounts` only ever run on the sandbox-**creation** path — reusing an existing sandbox skips straight to the skills copy and `sbx run`, and there's no way to change either without recreating the sandbox. `resolveSettings`/`resolveAllowedHosts` also run on creation, but can be re-applied to an already-existing sandbox with `cbox refresh` (see [Commands](#commands)) without recreating it. `resolveEnv`/`resolveMounts`/`resolveSettings`/`resolveAllowedHosts` are all **full-replace**: whatever they return is final. Core's own fixed values — the primary workspace mount, and the mount/env var/`Stop` hook that sync session history (see below) — are never routed through a hook, so build on anything else you want, like the host's own `~/.claude/settings.json`, by reading it yourself. `preCreate`/`postCreate` are **additive**: cbox's own fixed setup always runs regardless of what they do.
 
 Every hook's `ctx` is `{ workdir, homedir }`; `postCreate`'s `ctx` additionally carries `sbx`, a helper with `cp(localPath, remotePath, opts?)` and `exec(args)`, so a hook never shells out to `sbx` by hand.
 
