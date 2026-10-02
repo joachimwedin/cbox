@@ -1,4 +1,4 @@
-## cbox
+<img src="./banner.svg" alt="cbox" />
 
 A CLI that runs [Claude Code](https://claude.com/claude-code) inside an [`sbx`](https://docs.docker.com/ai/sandboxes/) sandbox, one sandbox per project directory, built around a small hook contract (`cbox.config.ts`) that lets you fully customize what goes into that sandbox — its env vars, mounts, `settings.json`, and network allowlist — plus run your own setup before and after it's created. Run `cbox` in a repo and it creates a sandbox mounting that directory (letting `sbx` pick the sandbox's own name), or reuses the one already mounting it as its primary workspace — so running `cbox` again in the same place drops you back into the same sandbox instead of spinning up a new one.
 

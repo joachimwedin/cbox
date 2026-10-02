@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 170" width="460" height="170" role="img" aria-label="cbox">
+  <title>cbox</title>
+  <style>
+    text { font-family: ui-monospace, Menlo, Consolas, 'Courier New', monospace; font-size: 20px; white-space: pre; fill: #18181b; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #ffffff; }
+    }
+  </style>
+  <text x="10" y="28" xml:space="preserve"> ██████╗ ██████╗  ██████╗ ██╗  ██╗</text>
+  <text x="10" y="52" xml:space="preserve">██╔════╝██╔══██╗██╔═══██╗╚██╗██╔╝</text>
+  <text x="10" y="76" xml:space="preserve">██║     ██████╔╝██║   ██║ ╚███╔╝ </text>
+  <text x="10" y="100" xml:space="preserve">██║     ██╔══██╗██║   ██║ ██╔██╗ </text>
+  <text x="10" y="124" xml:space="preserve">╚██████╗██████╔╝╚██████╔╝██╔╝ ██╗</text>
+  <text x="10" y="148" xml:space="preserve"> ╚═════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝</text>
+</svg>
