@@ -46,7 +46,7 @@ const resolveSettings: ResolveSettingsHook = (ctx) => {
   const hostSettings = fs.existsSync(hostSettingsPath)
     ? (JSON.parse(fs.readFileSync(hostSettingsPath, "utf8")) as Record<string, unknown>)
     : {};
-  return { ...hostSettings, statusLine: { type: "command", command: "~/.claude/statusline-command.sh" } };
+  return { ...hostSettings, statusLine: { type: "command", command: "bash ~/.claude/statusline-command.sh" } };
 };
 
 // Lets the sandbox reach npm's registry in addition to whatever sbx's own default policy already allows.
